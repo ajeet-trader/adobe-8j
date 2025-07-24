@@ -1,0 +1,19 @@
+{
+  "challenge_info": {
+    "challenge_id": "round_1b_003",
+    "test_case_name": "hr_fillable_forms"
+  },
+  "documents": [
+    { "filename": "Creating Fillable Forms.pdf", "title": "Creating Fillable Forms" },
+    { "filename": "Form Field Properties.pdf", "title": "Form Field Properties" },
+    { "filename": "Digital Signatures.pdf", "title": "Digital Signatures" },
+    { "filename": "Document Security.pdf", "title": "Document Security" },
+    { "filename": "Workflow Automation.pdf", "title": "Workflow Automation" }
+  ],
+  "persona": {
+    "role": "HR Professional"
+  },
+  "job_to_be_done": {
+    "task": "Create and manage fillable forms for onboarding and compliance"
+  }
+}

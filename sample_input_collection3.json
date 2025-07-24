@@ -1,0 +1,23 @@
+{
+  "challenge_info": {
+    "challenge_id": "round_1b_001",
+    "test_case_name": "vegetarian_corporate_catering"
+  },
+  "documents": [
+    { "filename": "Breakfast Recipes.pdf", "title": "Breakfast Recipes" },
+    { "filename": "Lunch Mains.pdf", "title": "Lunch Mains" },
+    { "filename": "Dinner Mains.pdf", "title": "Dinner Mains" },
+    { "filename": "Side Dishes.pdf", "title": "Side Dishes" },
+    { "filename": "Appetizers.pdf", "title": "Appetizers" },
+    { "filename": "Desserts.pdf", "title": "Desserts" },
+    { "filename": "Beverages.pdf", "title": "Beverages" },
+    { "filename": "Gluten-Free Options.pdf", "title": "Gluten-Free Options" },
+    { "filename": "Vegetarian Specialties.pdf", "title": "Vegetarian Specialties" }
+  ],
+  "persona": {
+    "role": "Food Contractor"
+  },
+  "job_to_be_done": {
+    "task": "Prepare vegetarian buffet-style dinner menu for corporate gathering with gluten-free items"
+  }
+}
