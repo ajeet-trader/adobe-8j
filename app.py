@@ -1,777 +1,457 @@
 """
-Adobe India Hackathon 2025 - Challenge 1B: Smart PDF Tool
-Fixed version with improved text extraction and content analysis
+Main Streamlit application for the Adobe PDF Challenge
 """
 
 import streamlit as st
-import fitz  # PyMuPDF
-import json
-import re
-from datetime import datetime
-from collections import defaultdict, Counter
 import pandas as pd
-import plotly.express as px
-from typing import Dict, List, Any, Tuple
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
-import numpy as np
-
-# Download required NLTK data
-try:
-    nltk.data.find('tokenizers/punkt')
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    try:
-        nltk.download('punkt', quiet=True)
-        nltk.download('stopwords', quiet=True)
-    except:
-        pass
+from pdf_processor import PDFProcessor
+from visualizer import PDFVisualizer
+import json
+import time
 
 # Page configuration
 st.set_page_config(
-    page_title="Challenge 1B - Smart PDF Tool",
-    page_icon="🧠",
-    layout="wide"
+    page_title="Adobe PDF Intelligence Challenge",
+    page_icon="📄",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # Custom CSS
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.5rem;
+        font-size: 3rem;
         font-weight: bold;
         text-align: center;
         color: #FF0000;
-        margin-bottom: 1rem;
+        margin-bottom: 2rem;
     }
-    .collection-info {
+    .sub-header {
+        font-size: 1.5rem;
+        color: #666;
+        text-align: center;
+        margin-bottom: 3rem;
+    }
+    .metric-card {
         background-color: #f0f2f6;
         padding: 1rem;
-        border-radius: 8px;
+        border-radius: 0.5rem;
         border-left: 4px solid #FF0000;
-        margin: 1rem 0;
     }
-    .relevance-high { 
-        background-color: #d4edda; 
-        padding: 1rem; 
-        border-radius: 8px; 
-        margin: 0.5rem 0;
-        border-left: 4px solid #28a745;
-    }
-    .relevance-medium { 
-        background-color: #fff3cd; 
-        padding: 1rem; 
-        border-radius: 8px; 
-        margin: 0.5rem 0;
-        border-left: 4px solid #ffc107;
-    }
-    .relevance-low { 
-        background-color: #f8d7da; 
-        padding: 1rem; 
-        border-radius: 8px; 
-        margin: 0.5rem 0;
-        border-left: 4px solid #dc3545;
-    }
-    .debug-info {
-        background-color: #e3f2fd;
-        padding: 0.5rem;
-        border-radius: 5px;
-        font-size: 0.8rem;
-        margin: 0.5rem 0;
+    .section-header {
+        font-size: 1.8rem;
+        font-weight: bold;
+        color: #333;
+        margin-top: 2rem;
+        margin-bottom: 1rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
-class SmartPDFAnalyzer:
-    def __init__(self):
-        """Initialize the analyzer"""
-        try:
-            self.stop_words = set(stopwords.words('english'))
-        except:
-            self.stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
-    
-    def analyze_persona_and_task(self, persona: str, task: str) -> Dict[str, Any]:
-        """Analyze persona and task to extract key characteristics"""
-        
-        # Extract meaningful keywords
-        persona_words = self._extract_keywords(persona.lower())
-        task_words = self._extract_keywords(task.lower())
-        
-        # Identify domain
-        domain = self._identify_domain(persona, task)
-        
-        # Extract action verbs
-        action_verbs = self._extract_action_verbs(task)
-        
-        # Add domain-specific keywords
-        domain_keywords = self._get_domain_keywords(domain)
-        
-        return {
-            "persona_keywords": persona_words,
-            "task_keywords": task_words,
-            "domain": domain,
-            "action_verbs": action_verbs,
-            "domain_keywords": domain_keywords
-        }
-    
-    def _extract_keywords(self, text: str) -> List[str]:
-        """Extract meaningful keywords from text"""
-        # Simple word extraction
-        words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
-        keywords = [word for word in words if word not in self.stop_words]
-        return list(set(keywords))
-    
-    def _identify_domain(self, persona: str, task: str) -> str:
-        """Identify the domain based on persona and task"""
-        text = f"{persona} {task}".lower()
-        
-        domains = {
-            "travel": ["travel", "trip", "vacation", "hotel", "restaurant", "tourism", "destination", "booking"],
-            "hr": ["hr", "human resources", "employee", "onboarding", "forms", "compliance", "training"],
-            "food": ["food", "recipe", "cooking", "menu", "catering", "restaurant", "chef", "kitchen", "ingredient"],
-            "legal": ["legal", "law", "compliance", "regulation", "contract", "attorney"],
-            "finance": ["finance", "financial", "investment", "budget", "accounting", "money"],
-            "technology": ["software", "tech", "system", "development", "IT", "programming"],
-            "healthcare": ["health", "medical", "patient", "clinical", "healthcare", "doctor"],
-            "business": ["business", "management", "strategy", "corporate", "company"]
-        }
-        
-        for domain, keywords in domains.items():
-            if any(keyword in text for keyword in keywords):
-                return domain
-        
-        return "general"
-    
-    def _get_domain_keywords(self, domain: str) -> List[str]:
-        """Get additional keywords for specific domains"""
-        domain_keywords = {
-            "travel": ["itinerary", "accommodation", "attraction", "transport", "guide", "culture", "local"],
-            "hr": ["policy", "procedure", "workflow", "document", "signature", "approval", "process"],
-            "food": ["vegetarian", "gluten-free", "buffet", "serving", "preparation", "dietary", "nutrition"],
-            "legal": ["clause", "agreement", "liability", "terms", "conditions", "rights"],
-            "finance": ["profit", "loss", "revenue", "cost", "analysis", "report", "statement"],
-            "technology": ["feature", "function", "interface", "user", "data", "security"],
-            "healthcare": ["treatment", "diagnosis", "therapy", "care", "wellness", "prevention"],
-            "business": ["objective", "goal", "target", "performance", "efficiency", "productivity"]
-        }
-        return domain_keywords.get(domain, [])
-    
-    def _extract_action_verbs(self, task: str) -> List[str]:
-        """Extract action verbs from task"""
-        common_verbs = [
-            "analyze", "create", "manage", "plan", "design", "develop", 
-            "implement", "organize", "prepare", "build", "extract", 
-            "identify", "find", "summarize", "review", "generate",
-            "compile", "gather", "collect", "process", "evaluate"
-        ]
-        
-        task_lower = task.lower()
-        found_verbs = [verb for verb in common_verbs if verb in task_lower]
-        return found_verbs
-    
-    def calculate_relevance(self, text: str, analysis: Dict[str, Any]) -> float:
-        """Calculate relevance score for text - IMPROVED VERSION"""
-        if not text or len(text.strip()) < 10:
-            return 0.0
-            
-        text_lower = text.lower()
-        score = 0.0
-        
-        # Persona keywords (30% weight)
-        persona_keywords = analysis.get("persona_keywords", [])
-        if persona_keywords:
-            persona_matches = sum(1 for word in persona_keywords if word in text_lower)
-            score += (persona_matches / len(persona_keywords)) * 0.3
-        
-        # Task keywords (25% weight)
-        task_keywords = analysis.get("task_keywords", [])
-        if task_keywords:
-            task_matches = sum(1 for word in task_keywords if word in text_lower)
-            score += (task_matches / len(task_keywords)) * 0.25
-        
-        # Domain keywords (25% weight)
-        domain_keywords = analysis.get("domain_keywords", [])
-        if domain_keywords:
-            domain_matches = sum(1 for word in domain_keywords if word in text_lower)
-            score += (domain_matches / len(domain_keywords)) * 0.25
-        
-        # Action verbs (10% weight)
-        action_verbs = analysis.get("action_verbs", [])
-        if action_verbs:
-            action_matches = sum(1 for verb in action_verbs if verb in text_lower)
-            score += (action_matches / len(action_verbs)) * 0.1
-        
-        # Length and quality bonus (10% weight)
-        length_score = min(len(text) / 200, 1.0) * 0.1
-        score += length_score
-        
-        # If no specific matches, give a base score for meaningful content
-        if score == 0 and len(text) > 50:
-            score = 0.1  # Base relevance for any substantial text
-        
-        return min(score, 1.0)
-    
-    def process_pdf_collection(self, uploaded_files: List, persona: str, task: str) -> Dict[str, Any]:
-        """Process a collection of PDF files - IMPROVED VERSION"""
-        
-        if len(uploaded_files) < 2:
-            st.error("❌ Challenge 1B requires at least 2 PDF files. Please upload multiple documents.")
-            return {}
-        
-        # Analyze persona and task
-        analysis = self.analyze_persona_and_task(persona, task)
-        
-        # Debug info
-        st.info(f"🧠 Processing {len(uploaded_files)} documents for {analysis['domain']} domain...")
-        with st.expander("🔍 Debug: Analysis Configuration"):
-            st.write("**Persona Keywords:**", analysis['persona_keywords'])
-            st.write("**Task Keywords:**", analysis['task_keywords'])
-            st.write("**Domain Keywords:**", analysis['domain_keywords'])
-            st.write("**Action Verbs:**", analysis['action_verbs'])
-        
-        all_sections = []
-        all_content = []
-        processing_stats = {}
-        
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        # Process each PDF
-        for i, uploaded_file in enumerate(uploaded_files):
-            status_text.text(f"Processing {uploaded_file.name}...")
-            progress_bar.progress((i + 1) / len(uploaded_files))
-            
-            sections, content, stats = self._process_single_pdf(uploaded_file, analysis)
-            all_sections.extend(sections)
-            all_content.extend(content)
-            processing_stats[uploaded_file.name] = stats
-        
-        # Debug processing stats
-        with st.expander("📊 Debug: Processing Statistics"):
-            for filename, stats in processing_stats.items():
-                st.write(f"**{filename}:**")
-                st.write(f"  - Pages processed: {stats['pages']}")
-                st.write(f"  - Text blocks found: {stats['blocks']}")
-                st.write(f"  - Meaningful blocks: {stats['meaningful_blocks']}")
-                st.write(f"  - Sections extracted: {stats['sections']}")
-                st.write(f"  - Content items: {stats['content_items']}")
-        
-        # Filter out very low relevance content
-        filtered_sections = [s for s in all_sections if s["relevance_score"] > 0.05]
-        filtered_content = [c for c in all_content if c["relevance_score"] > 0.05]
-        
-        # Rank by relevance
-        filtered_sections.sort(key=lambda x: x["relevance_score"], reverse=True)
-        filtered_content.sort(key=lambda x: x["relevance_score"], reverse=True)
-        
-        # Assign ranks
-        for i, section in enumerate(filtered_sections, 1):
-            section["importance_rank"] = i
-        
-        progress_bar.progress(1.0)
-        status_text.text("✅ Collection analysis complete!")
-        
-        if not filtered_sections and not filtered_content:
-            st.warning("⚠️ No relevant content found. Try adjusting your persona or task description to be more specific.")
-        
-        return {
-            "metadata": {
-                "input_documents": [f.name for f in uploaded_files],
-                "persona": persona,
-                "job_to_be_done": task,
-                "domain": analysis["domain"],
-                "processing_timestamp": datetime.now().isoformat(),
-                "total_sections_extracted": len(filtered_sections),
-                "total_subsections": len(filtered_content),
-                "persona_analysis": analysis,
-                "processing_stats": processing_stats
-            },
-            "extracted_sections": filtered_sections[:50],  # Top 50
-            "subsection_analysis": filtered_content[:100]  # Top 100
-        }
-    
-    def _process_single_pdf(self, uploaded_file, analysis: Dict[str, Any]) -> Tuple[List[Dict], List[Dict], Dict[str, int]]:
-        """Process a single PDF file - IMPROVED VERSION"""
-        sections = []
-        content = []
-        stats = {
-            "pages": 0,
-            "blocks": 0,
-            "meaningful_blocks": 0,
-            "sections": 0,
-            "content_items": 0
-        }
-        
-        try:
-            # Read PDF
-            pdf_bytes = uploaded_file.read()
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            stats["pages"] = len(doc)
-            
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-                
-                # Try multiple text extraction methods
-                text_blocks = []
-                
-                # Method 1: Dictionary extraction (structured)
-                try:
-                    text_dict = page.get_text("dict")
-                    for block in text_dict["blocks"]:
-                        if "lines" in block:
-                            block_text = self._extract_text_from_block(block)
-                            if block_text:
-                                text_blocks.append({
-                                    "text": block_text,
-                                    "method": "dict",
-                                    "block": block
-                                })
-                except:
-                    pass
-                
-                # Method 2: Simple text extraction (fallback)
-                if not text_blocks:
-                    try:
-                        simple_text = page.get_text()
-                        if simple_text:
-                            # Split into paragraphs
-                            paragraphs = [p.strip() for p in simple_text.split('\n\n') if p.strip()]
-                            for para in paragraphs:
-                                if len(para) > 20:  # Only meaningful paragraphs
-                                    text_blocks.append({
-                                        "text": para,
-                                        "method": "simple",
-                                        "block": None
-                                    })
-                    except:
-                        pass
-                
-                stats["blocks"] += len(text_blocks)
-                
-                # Process each text block
-                for text_block in text_blocks:
-                    block_text = text_block["text"]
-                    
-                    if self._is_meaningful_text(block_text):
-                        stats["meaningful_blocks"] += 1
-                        
-                        relevance_score = self.calculate_relevance(block_text, analysis)
-                        
-                        if relevance_score > 0.05:  # Lower threshold
-                            
-                            # Check if it's a section title
-                            is_title = False
-                            if text_block["method"] == "dict" and text_block["block"]:
-                                is_title = self._is_section_title(text_block["block"], block_text)
-                            else:
-                                # Simple heuristic for titles
-                                is_title = (
-                                    len(block_text) < 100 and 
-                                    len(block_text.split()) < 15 and
-                                    not block_text.endswith('.')
-                                )
-                            
-                            if is_title and relevance_score > 0.1:
-                                sections.append({
-                                    "document": uploaded_file.name,
-                                    "section_title": block_text[:150],  # Limit length
-                                    "page_number": page_num + 1,
-                                    "relevance_score": relevance_score
-                                })
-                                stats["sections"] += 1
-                            
-                            # Add to content analysis
-                            content.append({
-                                "document": uploaded_file.name,
-                                "refined_text": block_text,
-                                "page_number": page_num + 1,
-                                "relevance_score": relevance_score,
-                                "relevance_category": self._categorize_relevance(relevance_score)
-                            })
-                            stats["content_items"] += 1
-            
-            doc.close()
-            
-        except Exception as e:
-            st.error(f"Error processing {uploaded_file.name}: {e}")
-        
-        return sections, content, stats
-    
-    def _extract_text_from_block(self, block: Dict) -> str:
-        """Extract text from a block - IMPROVED VERSION"""
-        text_parts = []
-        try:
-            for line in block.get("lines", []):
-                line_text = ""
-                for span in line.get("spans", []):
-                    span_text = span.get("text", "")
-                    if span_text:
-                        line_text += span_text
-                if line_text.strip():
-                    text_parts.append(line_text.strip())
-            
-            result = " ".join(text_parts).strip()
-            # Clean up extra whitespace
-            result = re.sub(r'\s+', ' ', result)
-            return result
-        except:
-            return ""
-    
-    def _is_meaningful_text(self, text: str) -> bool:
-        """Check if text is meaningful - IMPROVED VERSION"""
-        if not text or len(text.strip()) < 5:
-            return False
-        
-        # Remove very short text
-        if len(text.strip()) < 10:
-            return False
-        
-        # Remove page numbers and headers
-        if re.match(r'^\d+$', text.strip()):
-            return False
-        
-        if re.match(r'^Page \d+', text.strip()):
-            return False
-        
-        # Must contain some letters
-        if not re.search(r'[a-zA-Z]', text):
-            return False
-        
-        # Remove pure punctuation
-        if re.match(r'^[^\w]*$', text.strip()):
-            return False
-        
-        return True
-    
-    def _is_section_title(self, block: Dict, text: str) -> bool:
-        """Check if text is likely a section title - IMPROVED VERSION"""
-        try:
-            # Calculate average font size
-            total_size = 0
-            font_count = 0
-            
-            for line in block.get("lines", []):
-                for span in line.get("spans", []):
-                    size = span.get("size", 12)
-                    total_size += size
-                    font_count += 1
-            
-            avg_font_size = total_size / font_count if font_count > 0 else 12
-            
-            # Title heuristics
-            is_title = (
-                len(text) < 150 and  # Not too long
-                len(text.split()) < 20 and  # Not too many words
-                avg_font_size > 11 and  # Reasonable font size
-                not text.endswith('.') and  # Titles don't end with periods
-                len(text.strip()) > 5  # Not too short
-            )
-            
-            return is_title
-        except:
-            # Fallback heuristic
-            return (
-                len(text) < 100 and 
-                len(text.split()) < 15 and
-                not text.endswith('.')
-            )
-    
-    def _categorize_relevance(self, score: float) -> str:
-        """Categorize relevance score"""
-        if score >= 0.5:
-            return "high"
-        elif score >= 0.2:
-            return "medium"
-        else:
-            return "low"
+def initialize_session_state():
+    """Initialize session state variables"""
+    if 'processed_data' not in st.session_state:
+        st.session_state.processed_data = None
+    if 'processor' not in st.session_state:
+        st.session_state.processor = PDFProcessor()
+    if 'visualizer' not in st.session_state:
+        st.session_state.visualizer = PDFVisualizer()
 
-def main():
-    """Main application"""
+def display_header():
+    """Display the main header"""
+    st.markdown('<div class="main-header">📄 Adobe PDF Intelligence Challenge</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Connecting the Dots - Rethink Reading, Rediscover Knowledge</div>', unsafe_allow_html=True)
+
+def display_file_upload():
+    """Display file upload section"""
+    st.markdown('<div class="section-header">📤 Upload Your PDF</div>', unsafe_allow_html=True)
     
-    # Initialize analyzer
-    if 'analyzer' not in st.session_state:
-        st.session_state.analyzer = SmartPDFAnalyzer()
+    uploaded_file = st.file_uploader(
+        "Choose a PDF file",
+        type="pdf",
+        help="Upload a PDF document to analyze its structure and extract insights"
+    )
     
-    # Header
-    st.markdown('<div class="main-header">🧠 Challenge 1B: Smart PDF Tool</div>', unsafe_allow_html=True)
-    st.markdown("### Adaptive Analysis for ANY Persona and Task")
+    if uploaded_file is not None:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("🔍 Analyze PDF", type="primary", use_container_width=True):
+                with st.spinner("Processing PDF... This may take a few moments."):
+                    progress_bar = st.progress(0)
+                    
+                    # Simulate progress updates
+                    progress_bar.progress(20)
+                    time.sleep(0.5)
+                    
+                    # Process the PDF
+                    result = st.session_state.processor.process_pdf(uploaded_file)
+                    progress_bar.progress(100)
+                    
+                    if 'error' in result:
+                        st.error(f"Error processing PDF: {result['error']}")
+                    else:
+                        st.session_state.processed_data = result
+                        st.success("✅ PDF processed successfully!")
+                        st.rerun()
+
+def display_overview(data):
+    """Display overview metrics"""
+    st.markdown('<div class="section-header">📊 Document Overview</div>', unsafe_allow_html=True)
     
-    # Sidebar
-    with st.sidebar:
-        st.markdown("## 🎯 How It Works")
-        st.markdown("""
-        1. **Define** your persona and task
-        2. **Upload** multiple PDF files (2+ required)
-        3. **Analyze** content across all documents
-        4. **Get** ranked, relevant results
-        """)
-        
-        st.markdown("## ✨ Features")
-        st.markdown("""
-        - 🧠 Adaptive to any persona
-        - 📚 Multi-document analysis
-        - 🎯 Relevance-based ranking
-        - 📊 Interactive results
-        - 🔍 Debug information
-        """)
-        
-        st.markdown("## 💡 Tips")
-        st.markdown("""
-        - Be specific with your persona
-        - Describe your task clearly
-        - Upload related documents
-        - Check debug info if no results
-        """)
+    metadata = data.get('metadata', {})
+    insights = data.get('insights', {})
+    statistics = insights.get('statistics', {})
     
-    # Main interface
+    # Display metadata
     col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**📋 Document Information**")
+        st.write(f"**Title:** {metadata.get('title', 'Unknown')}")
+        st.write(f"**Author:** {metadata.get('author', 'Unknown')}")
+        st.write(f"**Total Pages:** {metadata.get('total_pages', 0)}")
+    
+    with col2:
+        st.markdown("**📈 Content Statistics**")
+        st.write(f"**Total Words:** {statistics.get('total_words', 0):,}")
+        st.write(f"**Total Sentences:** {statistics.get('total_sentences', 0):,}")
+        st.write(f"**Total Sections:** {statistics.get('total_sections', 0)}")
+    
+    # Display key metrics
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.markdown("#### 👤 Your Persona")
-        persona = st.text_input(
-            "Who are you?",
-            placeholder="e.g., Food Contractor, Travel Planner, HR Manager",
-            help="Enter your professional role"
+        st.metric(
+            label="📖 Reading Time",
+            value=f"{statistics.get('reading_time_minutes', 0):.1f} min"
         )
     
     with col2:
-        st.markdown("#### 🎯 Your Task")
-        task = st.text_area(
-            "What do you need to do?",
-            placeholder="e.g., Plan vegetarian buffet menu for corporate event",
-            height=100,
-            help="Describe your specific goal"
+        readability = insights.get('readability', {})
+        st.metric(
+            label="📚 Reading Level",
+            value=f"Grade {readability.get('flesch_kincaid_grade', 0):.1f}"
         )
     
-    if persona and task:
-        # Show analysis preview
-        analysis = st.session_state.analyzer.analyze_persona_and_task(persona, task)
-        
-        st.markdown('<div class="collection-info">', unsafe_allow_html=True)
-        st.markdown("#### 🔍 Analysis Preview")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.write(f"**Domain:** {analysis['domain'].title()}")
-        with col2:
-            total_keywords = len(analysis['persona_keywords']) + len(analysis['task_keywords']) + len(analysis['domain_keywords'])
-            st.write(f"**Keywords:** {total_keywords}")
-        with col3:
-            st.write(f"**Actions:** {', '.join(analysis['action_verbs'][:3]) if analysis['action_verbs'] else 'General'}")
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # File upload - MULTIPLE FILES
-        st.markdown("#### 📚 Upload Your Document Collection")
-        uploaded_files = st.file_uploader(
-            "Select multiple PDF files (minimum 2 required)",
-            type="pdf",
-            accept_multiple_files=True,
-            help="Upload 2 or more related PDF documents for analysis"
+    with col3:
+        st.metric(
+            label="📄 Avg Words/Section",
+            value=f"{statistics.get('avg_words_per_section', 0):.0f}"
         )
+    
+    with col4:
+        st.metric(
+            label="🎯 Readability Score",
+            value=f"{readability.get('flesch_reading_ease', 0):.1f}"
+        )
+
+def display_structure_analysis(data):
+    """Display document structure analysis"""
+    st.markdown('<div class="section-header">🏗️ Document Structure</div>', unsafe_allow_html=True)
+    
+    structure = data.get('structure', {})
+    headings = structure.get('headings', [])
+    sections = structure.get('sections', [])
+    
+    if headings:
+        # Display structure tree
+        fig_tree = st.session_state.visualizer.create_structure_tree(headings)
+        if fig_tree:
+            st.plotly_chart(fig_tree, use_container_width=True)
         
-        if uploaded_files:
-            if len(uploaded_files) >= 2:
-                st.success(f"✅ {len(uploaded_files)} files uploaded successfully!")
-                
-                # Show file details
-                with st.expander("📋 Collection Details"):
-                    total_size = 0
-                    for i, file in enumerate(uploaded_files, 1):
-                        size_mb = file.size / (1024 * 1024)
-                        total_size += size_mb
-                        st.write(f"{i}. **{file.name}** ({size_mb:.1f} MB)")
-                    st.write(f"**Total Size:** {total_size:.1f} MB")
-                
-                # Analyze button
-                if st.button("🚀 Analyze Collection", type="primary", use_container_width=True):
-                    with st.spinner("🧠 Analyzing your document collection..."):
-                        result = st.session_state.analyzer.process_pdf_collection(
-                            uploaded_files, persona, task
-                        )
-                        
-                        if result:
-                            st.session_state.analysis_result = result
-                            st.rerun()
+        # Display table of contents
+        st.markdown("**📑 Table of Contents**")
+        toc_data = []
+        for heading in headings:
+            toc_data.append({
+                'Level': heading.get('level', 1),
+                'Title': heading.get('title', ''),
+                'Page': heading.get('page', 1)
+            })
+        
+        if toc_data:
+            df_toc = pd.DataFrame(toc_data)
+            st.dataframe(df_toc, use_container_width=True)
+    
+    # Display sections summary
+    if sections:
+        st.markdown("**📝 Sections Summary**")
+        sections_data = []
+        for section in sections:
+            sections_data.append({
+                'Section': section.get('title', '')[:50] + '...' if len(section.get('title', '')) > 50 else section.get('title', ''),
+                'Page': section.get('page', 1),
+                'Word Count': section.get('word_count', 0),
+                'Content Preview': section.get('content', '')[:100] + '...' if len(section.get('content', '')) > 100 else section.get('content', '')
+            })
+        
+        if sections_data:
+            df_sections = pd.DataFrame(sections_data)
+            st.dataframe(df_sections, use_container_width=True)
+
+def display_content_relationships(data):
+    """Display content relationship analysis"""
+    st.markdown('<div class="section-header">🔗 Content Relationships</div>', unsafe_allow_html=True)
+    
+    relationships = data.get('relationships', {})
+    
+    # Display similarity heatmap
+    similarity_matrix = relationships.get('similarity_matrix', [])
+    section_titles = relationships.get('section_titles', [])
+    
+    if similarity_matrix and section_titles:
+        fig_heatmap = st.session_state.visualizer.create_similarity_heatmap(similarity_matrix, section_titles)
+        if fig_heatmap:
+            st.plotly_chart(fig_heatmap, use_container_width=True)
+    
+    # Display content clusters
+    sections = data.get('structure', {}).get('sections', [])
+    clusters = relationships.get('clusters', [])
+    
+    if sections and clusters:
+        fig_clusters = st.session_state.visualizer.create_content_clusters(sections, clusters)
+        if fig_clusters:
+            st.plotly_chart(fig_clusters, use_container_width=True)
+    
+    # Display relationship network
+    fig_network = st.session_state.visualizer.create_relationship_network(relationships)
+    if fig_network:
+        st.plotly_chart(fig_network, use_container_width=True)
+    
+    # Display related sections
+    related_sections = relationships.get('related_sections', [])
+    if related_sections:
+        st.markdown("**🔍 Section Relationships**")
+        
+        for section_data in related_sections[:5]:  # Show top 5
+            section_title = section_data.get('section', '')
+            related = section_data.get('related', [])
             
-            else:
-                st.warning(f"⚠️ Please upload at least 2 PDF files. You have uploaded {len(uploaded_files)} file(s).")
-                st.info("💡 Challenge 1B requires analyzing multiple documents together to find connections and insights.")
+            if related:
+                with st.expander(f"📄 {section_title[:60]}..."):
+                    st.write("**Related Sections:**")
+                    for rel in related:
+                        similarity = rel.get('similarity', 0)
+                        rel_title = rel.get('title', '')
+                        st.write(f"• {rel_title} (Similarity: {similarity:.3f})")
+
+def display_insights_analysis(data):
+    """Display key insights and analysis"""
+    st.markdown('<div class="section-header">💡 Key Insights</div>', unsafe_allow_html=True)
     
-    # Display results
-    if 'analysis_result' in st.session_state:
-        result = st.session_state.analysis_result
-        metadata = result.get('metadata', {})
+    insights = data.get('insights', {})
+    
+    # Display readability analysis
+    readability = insights.get('readability', {})
+    if readability:
+        fig_readability = st.session_state.visualizer.create_readability_chart(readability)
+        if fig_readability:
+            st.plotly_chart(fig_readability, use_container_width=True)
+    
+    # Display statistics overview
+    statistics = insights.get('statistics', {})
+    if statistics:
+        fig_stats = st.session_state.visualizer.create_statistics_overview(statistics)
+        if fig_stats:
+            st.plotly_chart(fig_stats, use_container_width=True)
+    
+    # Display key entities
+    entities = insights.get('key_entities', [])
+    if entities:
+        st.markdown("**🏷️ Key Entities Found**")
         
+        cols = st.columns(min(3, len(entities)))
+        for i, entity_group in enumerate(entities[:3]):
+            with cols[i]:
+                category = entity_group.get('category', 'Unknown')
+                entity_list = entity_group.get('entities', [])
+                
+                st.markdown(f"**{category}**")
+                for entity in entity_list[:5]:  # Show top 5 entities
+                    st.write(f"• {entity}")
+    
+    # Display summary points
+    summary_points = insights.get('summary_points', [])
+    if summary_points:
+        st.markdown("**📝 Key Summary Points**")
+        for i, point in enumerate(summary_points, 1):
+            st.write(f"{i}. {point}")
+    
+    # Display word cloud
+    full_text = ' '.join([page['text'] for page in data.get('text_content', [])])
+    if full_text:
+        wordcloud_img = st.session_state.visualizer.create_wordcloud(full_text)
+        if wordcloud_img:
+            st.markdown("**☁️ Word Cloud**")
+            st.image(wordcloud_img, use_column_width=True)
+
+def display_export_options(data):
+    """Display export options"""
+    st.markdown('<div class="section-header">💾 Export Results</div>', unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Export as JSON
+        if st.button("📄 Export as JSON", use_container_width=True):
+            json_data = json.dumps(data, indent=2, default=str)
+            st.download_button(
+                label="Download JSON",
+                data=json_data,
+                file_name="pdf_analysis.json",
+                mime="application/json"
+            )
+    
+    with col2:
+        # Export structure as CSV
+        structure = data.get('structure', {})
+        sections = structure.get('sections', [])
+        if sections:
+            if st.button("📊 Export Structure as CSV", use_container_width=True):
+                df = pd.DataFrame(sections)
+                csv_data = df.to_csv(index=False)
+                st.download_button(
+                    label="Download CSV",
+                    data=csv_data,
+                    file_name="document_structure.csv",
+                    mime="text/csv"
+                )
+    
+    with col3:
+        # Export insights summary
+        if st.button("📋 Export Summary Report", use_container_width=True):
+            insights = data.get('insights', {})
+            metadata = data.get('metadata', {})
+            
+            report = f"""
+# PDF Analysis Report
+
+## Document Information
+- Title: {metadata.get('title', 'Unknown')}
+- Author: {metadata.get('author', 'Unknown')}
+- Pages: {metadata.get('total_pages', 0)}
+
+## Statistics
+- Total Words: {insights.get('statistics', {}).get('total_words', 0):,}
+- Total Sentences: {insights.get('statistics', {}).get('total_sentences', 0):,}
+- Total Sections: {insights.get('statistics', {}).get('total_sections', 0)}
+- Reading Time: {insights.get('statistics', {}).get('reading_time_minutes', 0):.1f} minutes
+
+## Readability
+- Flesch Reading Ease: {insights.get('readability', {}).get('flesch_reading_ease', 0):.1f}
+- Grade Level: {insights.get('readability', {}).get('flesch_kincaid_grade', 0):.1f}
+
+## Key Summary Points
+"""
+            
+            summary_points = insights.get('summary_points', [])
+            for i, point in enumerate(summary_points, 1):
+                report += f"{i}. {point}\n"
+            
+            st.download_button(
+                label="Download Report",
+                data=report,
+                file_name="pdf_analysis_report.md",
+                mime="text/markdown"
+            )
+
+def main():
+    """Main application function"""
+    initialize_session_state()
+    display_header()
+    
+    # Sidebar
+    with st.sidebar:
+        st.markdown("## 🎯 Challenge 1a")
+        st.markdown("**Objective:** Extract structured outlines from PDFs and understand content relationships")
+        
+        st.markdown("## 🚀 Features")
+        st.markdown("""
+        - 📄 PDF text extraction
+        - 🏗️ Structure analysis
+        - 🔗 Content relationships
+        - 💡 Key insights
+        - 📊 Interactive visualizations
+        - 💾 Export capabilities
+        """)
+        
+        st.markdown("## 📖 How to Use")
+        st.markdown("""
+        1. Upload a PDF file
+        2. Click 'Analyze PDF'
+        3. Explore the results
+        4. Export your findings
+        """)
+    
+    # Main content
+    if st.session_state.processed_data is None:
+        display_file_upload()
+        
+        # Show sample information
         st.markdown("---")
-        st.markdown("## 📊 Analysis Results")
+        st.markdown("## 🎯 What This Tool Does")
         
-        # Overview metrics
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
+        
         with col1:
-            st.metric("📄 Documents", len(metadata.get('input_documents', [])))
+            st.markdown("""
+            **📄 Structure Extraction**
+            - Identifies headings and sections
+            - Creates document hierarchy
+            - Generates table of contents
+            """)
+        
         with col2:
-            st.metric("🏆 Sections", metadata.get('total_sections_extracted', 0))
+            st.markdown("""
+            **🔗 Content Analysis**
+            - Finds related sections
+            - Calculates content similarity
+            - Creates relationship networks
+            """)
+        
         with col3:
-            st.metric("📝 Content Items", metadata.get('total_subsections', 0))
-        with col4:
-            st.metric("🎯 Domain", metadata.get('domain', 'general').title())
+            st.markdown("""
+            **💡 Smart Insights**
+            - Extracts key entities
+            - Analyzes readability
+            - Generates summaries
+            """)
+    
+    else:
+        # Display analysis results
+        data = st.session_state.processed_data
         
-        # Show processing stats
-        processing_stats = metadata.get('processing_stats', {})
-        if processing_stats:
-            with st.expander("📈 Processing Summary"):
-                for filename, stats in processing_stats.items():
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.write(f"**{filename}**")
-                    with col2:
-                        st.write(f"Pages: {stats['pages']}, Blocks: {stats['meaningful_blocks']}")
-                    with col3:
-                        st.write(f"Sections: {stats['sections']}, Content: {stats['content_items']}")
-        
-        # Tabs for results
-        tab1, tab2, tab3 = st.tabs(["🏆 Top Sections", "📝 Content Analysis", "💾 Export"])
+        # Create tabs for different views
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "📊 Overview", 
+            "🏗️ Structure", 
+            "🔗 Relationships", 
+            "💡 Insights", 
+            "💾 Export"
+        ])
         
         with tab1:
-            sections = result.get('extracted_sections', [])
-            if sections:
-                st.markdown(f"### 🏆 Top {len(sections)} Most Relevant Sections")
-                
-                # Create DataFrame
-                df_data = []
-                for section in sections:
-                    df_data.append({
-                        'Rank': section.get('importance_rank', 0),
-                        'Document': section.get('document', ''),
-                        'Section': section.get('section_title', '')[:80] + "..." if len(section.get('section_title', '')) > 80 else section.get('section_title', ''),
-                        'Page': section.get('page_number', 0),
-                        'Relevance': f"{section.get('relevance_score', 0):.3f}"
-                    })
-                
-                df = pd.DataFrame(df_data)
-                st.dataframe(df, use_container_width=True, hide_index=True)
-                
-                # Visualization
-                if len(df) > 0:
-                    doc_counts = df['Document'].value_counts()
-                    fig = px.bar(
-                        x=doc_counts.index,
-                        y=doc_counts.values,
-                        title="Sections per Document",
-                        labels={'x': 'Document', 'y': 'Number of Sections'}
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.warning("No sections found. Try being more specific with your persona and task.")
+            display_overview(data)
         
         with tab2:
-            content = result.get('subsection_analysis', [])
-            if content:
-                st.markdown(f"### 📝 Content Analysis ({len(content)} items)")
-                
-                # Relevance distribution
-                categories = [item.get('relevance_category', 'low') for item in content]
-                category_counts = Counter(categories)
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("🔥 High Relevance", category_counts.get('high', 0))
-                with col2:
-                    st.metric("⚡ Medium Relevance", category_counts.get('medium', 0))
-                with col3:
-                    st.metric("💡 Low Relevance", category_counts.get('low', 0))
-                
-                # Filter by relevance
-                relevance_filter = st.selectbox(
-                    "Filter by relevance:",
-                    ["All", "High", "Medium", "Low"]
-                )
-                
-                filtered_content = content
-                if relevance_filter != "All":
-                    filtered_content = [
-                        item for item in content 
-                        if item.get('relevance_category', '').lower() == relevance_filter.lower()
-                    ]
-                
-                # Group by document
-                doc_content = defaultdict(list)
-                for item in filtered_content:
-                    doc_content[item['document']].append(item)
-                
-                # Display content by document
-                for doc_name, items in doc_content.items():
-                    with st.expander(f"📄 {doc_name} ({len(items)} items)"):
-                        for i, item in enumerate(items[:8], 1):  # Show top 8 per doc
-                            category = item.get('relevance_category', 'low')
-                            score = item.get('relevance_score', 0)
-                            
-                            if category == 'high':
-                                st.markdown('<div class="relevance-high">', unsafe_allow_html=True)
-                                st.markdown("🔥 **HIGH RELEVANCE**")
-                            elif category == 'medium':
-                                st.markdown('<div class="relevance-medium">', unsafe_allow_html=True)
-                                st.markdown("⚡ **MEDIUM RELEVANCE**")
-                            else:
-                                st.markdown('<div class="relevance-low">', unsafe_allow_html=True)
-                                st.markdown("💡 **LOW RELEVANCE**")
-                            
-                            st.markdown(f"**Item {i} (Page {item['page_number']})**")
-                            st.progress(score, text=f"Relevance Score: {score:.3f}")
-                            
-                            text = item['refined_text']
-                            display_text = text[:400] + "..." if len(text) > 400 else text
-                            st.write(display_text)
-                            
-                            st.markdown('</div>', unsafe_allow_html=True)
-            else:
-                st.warning("No content found. Try adjusting your persona or task to be more specific.")
+            display_structure_analysis(data)
         
         with tab3:
-            st.markdown("### 💾 Export Results")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Export JSON
-                if st.button("📄 Export Complete Analysis (JSON)", use_container_width=True):
-                    json_data = json.dumps(result, indent=2, default=str)
-                    st.download_button(
-                        "Download JSON",
-                        json_data,
-                        "analysis_results.json",
-                        "application/json"
-                    )
-            
-            with col2:
-                # Export CSV
-                sections = result.get('extracted_sections', [])
-                if sections:
-                    if st.button("📊 Export Sections (CSV)", use_container_width=True):
-                        df_data = []
-                        for section in sections:
-                            df_data.append({
-                                'rank': section.get('importance_rank', 0),
-                                'document': section.get('document', ''),
-                                'section_title': section.get('section_title', ''),
-                                'page_number': section.get('page_number', 0),
-                                'relevance_score': section.get('relevance_score', 0)
-                            })
-                        
-                        df = pd.DataFrame(df_data)
-                        csv_data = df.to_csv(index=False)
-                        st.download_button(
-                            "Download CSV",
-                            csv_data,
-                            "sections.csv",
-                            "text/csv"
-                        )
+            display_content_relationships(data)
+        
+        with tab4:
+            display_insights_analysis(data)
+        
+        with tab5:
+            display_export_options(data)
         
         # Reset button
-        if st.button("🔄 Start New Analysis", type="secondary"):
-            if 'analysis_result' in st.session_state:
-                del st.session_state.analysis_result
-            st.rerun()
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("🔄 Analyze New PDF", type="secondary", use_container_width=True):
+                st.session_state.processed_data = None
+                st.rerun()
 
 if __name__ == "__main__":
     main()
