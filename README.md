@@ -1,10 +1,10 @@
-# Adobe India Hackathon 2025 - Challenge 1a Solution
+# Adobe India Hackathon 2025 - Challenge 1a & 1b Solution
 
 ## 🎯 Challenge Overview
 
 **"Connecting the Dots" - Rethink Reading, Rediscover Knowledge**
 
-This solution addresses Challenge 1a of the Adobe India Hackathon 2025, which focuses on reimagining PDFs as intelligent, interactive experiences. The goal is to extract structured outlines from raw PDFs with blazing speed and pinpoint accuracy, then power it up with on-device intelligence that understands sections and links related ideas together.
+This solution addresses both Challenge 1a and Challenge 1b of the Adobe India Hackathon 2025. Challenge 1a focuses on reimagining PDFs as intelligent, interactive experiences by extracting structured outlines from raw PDFs with blazing speed and pinpoint accuracy, then powering it up with on-device intelligence that understands sections and links related ideas together. Challenge 1b introduces an adaptive PDF analysis tool that works with ANY persona and task, processing multiple PDF documents to find the most relevant content.
 
 ## 🚀 Features
 
@@ -23,6 +23,11 @@ This solution addresses Challenge 1a of the Adobe India Hackathon 2025, which fo
 - **🌐 Network Analysis**: Relationship networks between document sections
 - **☁️ Word Clouds**: Visual representation of key terms
 - **📱 Responsive UI**: Clean, modern interface built with Streamlit
+
+### Challenge 1B Specific Features
+- **📚 Multi-Document**: Analyzes entire collections
+- **🎯 Smart Ranking**: Relevance-based content prioritization
+- **📊 Interactive**: Rich visualizations and filtering
 
 ## 🛠️ Installation & Setup
 
@@ -100,6 +105,12 @@ Navigate through the different tabs:
 - Export structure data as CSV
 - Generate summary report in Markdown
 
+### Challenge 1B Specific Usage
+1. **Define Persona**: Enter your professional role (e.g., "Data Scientist")
+2. **Define Task**: Describe what you need (e.g., "Extract insights for report")
+3. **Upload PDFs**: Select 2+ related PDF files
+4. **Analyze**: Get ranked, relevant results
+
 ## 🏗️ Architecture
 
 ### Core Components
@@ -139,6 +150,10 @@ Navigate through the different tabs:
    - Network graph construction
    - Related content identification
 
+4. **Persona Adaptation**
+   - Adaptive algorithms based on persona and task
+   - Relevance ranking for content prioritization
+
 ## 🎯 Challenge Requirements Met
 
 ### ✅ Extract Structured Outlines
@@ -164,6 +179,21 @@ Navigate through the different tabs:
 - Interactive visualizations
 - Real-time analysis
 - Export capabilities
+
+### ✅ Multiple PDF Processing
+- Requires minimum 2 files
+
+### ✅ Persona Adaptation
+- Works with any professional role
+
+### ✅ Task Flexibility
+- Adapts to any specific task
+
+### ✅ Relevance Ranking
+- Intelligent content prioritization
+
+### ✅ Structured Output
+- JSON format with proper schema
 
 ## 🔧 Technical Details
 
@@ -214,6 +244,7 @@ Navigate through the different tabs:
 3. **Interactive Network Visualization**: Visual representation of document relationships
 4. **Comprehensive Export Options**: Multiple formats for different use cases
 5. **Real-time Processing**: Immediate feedback and progressive analysis
+6. **Adaptive PDF Analysis**: Works with any persona and task
 
 ### Technical Innovation
 - **Hybrid Text Extraction**: Combines multiple PDF libraries for maximum compatibility
@@ -233,6 +264,14 @@ Navigate through the different tabs:
 - Content Similarity: Semantic similarity with 0.3+ threshold
 - Entity Recognition: Depends on document type and content quality
 
+## 📁 Simple Structure
+\`\`\`
+├── app.py           # Main application
+├── requirements.txt # Dependencies
+├── run.sh          # Setup & run script
+└── README.md       # This file
+\`\`\`
+
 ## 🤝 Contributing
 
 This solution is designed to be extensible and modular. Key areas for contribution:
@@ -249,13 +288,14 @@ This project is developed for the Adobe India Hackathon 2025. Please refer to th
 
 ## 🎉 Conclusion
 
-This solution successfully addresses Challenge 1a by creating an intelligent PDF processing system that:
+This solution successfully addresses both Challenge 1a and Challenge 1b by creating an intelligent PDF processing system that:
 
 - **Extracts structured outlines** with high accuracy
 - **Processes documents quickly** with optimized algorithms
 - **Understands content relationships** using advanced NLP
 - **Provides interactive visualizations** for better insights
 - **Offers comprehensive export options** for various use cases
+- **Adapts to any persona and task** for smart content prioritization
 
 The system transforms static PDFs into intelligent, interactive experiences that help users discover knowledge and understand document relationships in new ways.
 
