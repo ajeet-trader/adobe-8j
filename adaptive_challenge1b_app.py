@@ -23,6 +23,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import spacy
 
+from collection_manager import integrate_collection_manager
+
 # Download required NLTK data
 try:
     nltk.data.find('tokenizers/punkt')
@@ -276,8 +278,12 @@ class AdaptivePersonaAnalyzer:
     def analyze_collection(self, pdf_files: List, persona: str, task: str, collection_name: str) -> Dict[str, Any]:
         """Analyze a collection of PDFs with adaptive persona-based analysis"""
         
+        if len(pdf_files) < 2:
+            st.error("❌ Challenge 1B requires multiple PDF files as a collection. Please upload at least 2 documents.")
+            return {}
+        
         # First, analyze the persona and task dynamically
-        st.info("🧠 Analyzing persona and task characteristics...")
+        st.info(f"🧠 Analyzing persona and task characteristics for {len(pdf_files)}-document collection...")
         persona_analysis = self.analyze_persona_and_task(persona, task)
         
         # Display the analysis
@@ -285,33 +291,48 @@ class AdaptivePersonaAnalyzer:
         
         all_extracted_sections = []
         all_subsection_analysis = []
+        document_summaries = {}
         
         progress_bar = st.progress(0)
         status_text = st.empty()
         
+        # Process each document in the collection
         for i, pdf_file in enumerate(pdf_files):
-            status_text.text(f"Processing {pdf_file.name} with adaptive analysis...")
+            status_text.text(f"Processing document {i+1}/{len(pdf_files)}: {pdf_file.name}")
             progress_bar.progress((i + 1) / len(pdf_files))
             
             sections, subsections = self._process_pdf_adaptive(pdf_file, persona_analysis)
             all_extracted_sections.extend(sections)
             all_subsection_analysis.extend(subsections)
+            
+            # Create document summary
+            document_summaries[pdf_file.name] = {
+                "sections_found": len(sections),
+                "content_items": len(subsections),
+                "avg_relevance": np.mean([s.get('relevance_score', 0) for s in subsections]) if subsections else 0
+            }
         
-        # Rank sections by adaptive relevance
+        status_text.text("🔄 Performing cross-document analysis and ranking...")
+        
+        # Rank sections by adaptive relevance across the entire collection
         ranked_sections = self._rank_by_adaptive_importance(all_extracted_sections, persona_analysis)
         
-        # Ensure diverse representation
+        # Ensure diverse representation across all documents in collection
         balanced_sections = self._balance_document_representation(ranked_sections)
         
-        # Generate insights about the analysis
-        analysis_insights = self._generate_analysis_insights(balanced_sections, persona_analysis)
+        # Perform cross-document analysis
+        cross_document_insights = self._analyze_cross_document_patterns(balanced_sections, all_subsection_analysis)
         
-        status_text.text("✅ Adaptive analysis complete!")
+        # Generate insights about the collection analysis
+        analysis_insights = self._generate_collection_insights(balanced_sections, persona_analysis, document_summaries)
+        
+        status_text.text("✅ Collection analysis complete!")
         progress_bar.progress(1.0)
         
         return {
             "metadata": {
                 "input_documents": [f.name for f in pdf_files],
+                "collection_size": len(pdf_files),
                 "persona": persona,
                 "job_to_be_done": task,
                 "collection_name": collection_name,
@@ -319,10 +340,12 @@ class AdaptivePersonaAnalyzer:
                 "total_sections_extracted": len(balanced_sections),
                 "total_subsections": len(all_subsection_analysis),
                 "persona_analysis": persona_analysis,
-                "analysis_insights": analysis_insights
+                "analysis_insights": analysis_insights,
+                "document_summaries": document_summaries,
+                "cross_document_insights": cross_document_insights
             },
-            "extracted_sections": balanced_sections[:50],
-            "subsection_analysis": all_subsection_analysis[:100]
+            "extracted_sections": balanced_sections[:50],  # Top 50 across entire collection
+            "subsection_analysis": all_subsection_analysis[:100]  # Top 100 across entire collection
         }
     
     def _display_persona_analysis(self, persona_analysis: Dict[str, Any], persona: str, task: str):
@@ -632,6 +655,91 @@ class AdaptivePersonaAnalyzer:
         
         return insights
 
+    def _analyze_cross_document_patterns(self, sections: List[Dict], subsections: List[Dict]) -> Dict[str, Any]:
+        """Analyze patterns across multiple documents in the collection"""
+        cross_insights = {
+            "document_overlap": {},
+            "complementary_content": [],
+            "collection_coverage": {},
+            "content_gaps": []
+        }
+        
+        # Analyze document overlap in topics
+        doc_topics = defaultdict(set)
+        for section in sections:
+            doc_name = section['document']
+            section_words = set(section['section_title'].lower().split())
+            doc_topics[doc_name].update(section_words)
+        
+        # Find overlapping topics between documents
+        docs = list(doc_topics.keys())
+        for i, doc1 in enumerate(docs):
+            for doc2 in docs[i+1:]:
+                overlap = doc_topics[doc1] & doc_topics[doc2]
+                if overlap:
+                    cross_insights["document_overlap"][f"{doc1} ↔ {doc2}"] = list(overlap)
+        
+        # Identify complementary content
+        doc_content_types = defaultdict(list)
+        for subsection in subsections:
+            doc_name = subsection['document']
+            content = subsection['refined_text'].lower()
+            
+            # Categorize content type
+            if any(word in content for word in ['step', 'instruction', 'how to', 'process']):
+                doc_content_types[doc_name].append('instructional')
+            elif any(word in content for word in ['list', 'items', 'options', 'choices']):
+                doc_content_types[doc_name].append('reference')
+            elif any(word in content for word in ['example', 'case', 'scenario']):
+                doc_content_types[doc_name].append('examples')
+        
+        cross_insights["complementary_content"] = dict(doc_content_types)
+        
+        return cross_insights
+
+    def _generate_collection_insights(self, sections: List[Dict], persona_analysis: Dict[str, Any], document_summaries: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate insights specific to collection analysis"""
+        insights = {
+            "collection_strength": 0.0,
+            "document_contribution": {},
+            "coverage_analysis": {},
+            "collection_recommendations": []
+        }
+        
+        # Calculate collection strength
+        if sections:
+            avg_relevance = np.mean([s.get('importance_rank', 0) for s in sections])
+            insights["collection_strength"] = min(avg_relevance / len(sections), 1.0)
+        
+        # Document contribution analysis
+        doc_contributions = defaultdict(int)
+        for section in sections:
+            doc_contributions[section['document']] += 1
+        
+        total_sections = len(sections)
+        for doc, count in doc_contributions.items():
+            insights["document_contribution"][doc] = {
+                "sections": count,
+                "percentage": (count / total_sections) * 100 if total_sections > 0 else 0
+            }
+        
+        # Coverage analysis
+        domains = persona_analysis.get('domain_indicators', [])
+        if domains:
+            insights["coverage_analysis"]["domains_covered"] = len(domains)
+            insights["coverage_analysis"]["primary_domain"] = domains[0] if domains else "general"
+        
+        # Generate recommendations
+        if len(document_summaries) < 3:
+            insights["collection_recommendations"].append("Consider adding more documents to the collection for comprehensive analysis")
+        
+        # Check for balanced contribution
+        contributions = list(doc_contributions.values())
+        if contributions and max(contributions) > min(contributions) * 3:
+            insights["collection_recommendations"].append("Some documents contribute significantly more content - ensure all documents are relevant to the persona/task")
+        
+        return insights
+
 def initialize_session_state():
     """Initialize session state variables"""
     if 'adaptive_analyzer' not in st.session_state:
@@ -703,68 +811,97 @@ def display_adaptive_setup():
         help="Give your document collection a descriptive name"
     )
     
-    # File upload
+    # File upload - MULTIPLE FILES AS COLLECTION using Collection Manager
     if persona and task and collection_name:
-        st.markdown("### 📄 Upload Your Documents")
-        uploaded_files = st.file_uploader(
-            "Upload PDF documents for analysis",
-            type="pdf",
-            accept_multiple_files=True,
-            help="Upload any PDF documents relevant to your persona and task"
-        )
+        st.markdown("### 📚 Create Your Document Collection")
         
-        if uploaded_files:
-            st.success(f"✅ {len(uploaded_files)} PDF files uploaded successfully!")
+        # Initialize collection manager
+        collection_manager = integrate_collection_manager()
+        
+        # Use collection manager interface
+        collection_result = collection_manager.create_collection_interface()
+        
+        if collection_result:
+            if collection_result["collection_type"] == "uploaded":
+                uploaded_files = collection_result["files"]
+                collection_stats = collection_result["collection_stats"]
+                
+                # Show collection processing strategy
+                st.markdown("### 🧠 Collection Processing Strategy")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**📊 Cross-Document Analysis**")
+                    st.write("• Analyze content across all documents")
+                    st.write("• Find connections between different PDFs")
+                    st.write("• Ensure balanced representation")
+                
+                with col2:
+                    st.markdown("**🎯 Unified Relevance Ranking**")
+                    st.write("• Rank content from entire collection")
+                    st.write("• Prioritize based on persona + task")
+                    st.write("• Provide collection-wide insights")
+                
+                # Preview the adaptive analysis
+                st.markdown("### 🔍 Analysis Preview")
+                preview_analysis = st.session_state.adaptive_analyzer.analyze_persona_and_task(persona, task)
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.markdown('<div class="dynamic-persona">', unsafe_allow_html=True)
+                    st.markdown("**🎯 Detected Focus Areas**")
+                    domains = preview_analysis.get("domain_indicators", ["general"])
+                    st.write(", ".join(domains).title())
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                with col2:
+                    st.markdown('<div class="dynamic-persona">', unsafe_allow_html=True)
+                    st.markdown("**🔑 Key Terms Identified**")
+                    keywords = preview_analysis.get("persona_keywords", [])[:3]
+                    st.write(", ".join(keywords) if keywords else "General analysis")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                with col3:
+                    st.markdown('<div class="dynamic-persona">', unsafe_allow_html=True)
+                    st.markdown("**⚡ Action Focus**")
+                    actions = preview_analysis.get("action_verbs", [])[:3]
+                    st.write(", ".join(actions) if actions else "Content extraction")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                # Analyze button
+                st.markdown("---")
+                col1, col2, col3 = st.columns([1, 2, 1])
+                with col2:
+                    if st.button("🚀 Analyze Complete Collection", type="primary", use_container_width=True):
+                        with st.spinner(f"🧠 Analyzing collection of {len(uploaded_files)} documents..."):
+                            result = st.session_state.adaptive_analyzer.analyze_collection(
+                                uploaded_files,
+                                persona,
+                                task,
+                                collection_name
+                            )
+                            
+                            if result:  # Check if analysis was successful
+                                analysis_key = f"{collection_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                                st.session_state.analysis_results[analysis_key] = result
+                                st.session_state.current_analysis = analysis_key
+                                st.success("✅ Collection analysis completed successfully!")
+                                st.rerun()
             
-            # Display uploaded files
-            with st.expander("📋 Uploaded Files"):
-                for file in uploaded_files:
-                    st.write(f"• {file.name} ({file.size:,} bytes)")
-            
-            # Preview the adaptive analysis
-            st.markdown("### 🔍 Analysis Preview")
-            preview_analysis = st.session_state.adaptive_analyzer.analyze_persona_and_task(persona, task)
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.markdown('<div class="dynamic-persona">', unsafe_allow_html=True)
-                st.markdown("**🎯 Detected Focus Areas**")
-                domains = preview_analysis.get("domain_indicators", ["general"])
-                st.write(", ".join(domains).title())
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown('<div class="dynamic-persona">', unsafe_allow_html=True)
-                st.markdown("**🔑 Key Terms Identified**")
-                keywords = preview_analysis.get("persona_keywords", [])[:3]
-                st.write(", ".join(keywords) if keywords else "General analysis")
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            with col3:
-                st.markdown('<div class="dynamic-persona">', unsafe_allow_html=True)
-                st.markdown("**⚡ Action Focus**")
-                actions = preview_analysis.get("action_verbs", [])[:3]
-                st.write(", ".join(actions) if actions else "Content extraction")
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Analyze button
-            st.markdown("---")
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                if st.button("🚀 Start Adaptive Analysis", type="primary", use_container_width=True):
-                    with st.spinner("🧠 Performing adaptive analysis... This may take a few minutes."):
-                        result = st.session_state.adaptive_analyzer.analyze_collection(
-                            uploaded_files,
-                            persona,
-                            task,
-                            collection_name
-                        )
-                        
-                        analysis_key = f"{collection_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                        st.session_state.analysis_results[analysis_key] = result
-                        st.session_state.current_analysis = analysis_key
-                        st.success("✅ Adaptive analysis completed successfully!")
-                        st.rerun()
+            elif collection_result["collection_type"] == "sample":
+                # Handle sample collection
+                collection_info = collection_result["collection_info"]
+                
+                st.info("📝 **Sample Collection Selected**")
+                st.write("This demonstrates how the system would process a real collection.")
+                st.write(f"**Suggested Persona:** {collection_info['persona']}")
+                st.write(f"**Suggested Task:** {collection_info['task']}")
+                
+                # Option to use suggested values
+                if st.button("📋 Use Suggested Persona & Task", type="secondary"):
+                    st.session_state.suggested_persona = collection_info['persona']
+                    st.session_state.suggested_task = collection_info['task']
+                    st.rerun()
 
 def display_adaptive_results():
     """Display adaptive analysis results"""
@@ -1188,7 +1325,7 @@ def display_adaptive_insights_tab(result):
     else:
         st.success("✅ Analysis appears well-optimized for your persona and task!")
 
-def display_adaptive_export_tab(result, collection_name):
+def display_adaptive_export_tab(result):
     """Display adaptive export options"""
     st.markdown("### 💾 Export Adaptive Analysis Results")
     
@@ -1229,7 +1366,7 @@ def display_adaptive_export_tab(result, collection_name):
     
     with col3:
         if st.button("📋 Export Adaptive Report", use_container_width=True):
-            report = generate_adaptive_report(result, collection_name)
+            report = generate_adaptive_report(result)
             st.download_button(
                 label="Download Report",
                 data=report,
@@ -1262,10 +1399,10 @@ def display_adaptive_export_tab(result, collection_name):
             df = pd.DataFrame(enhanced_sections)
             st.dataframe(df)
     elif export_type == "Adaptive Report (Markdown)":
-        report = generate_adaptive_report(result, collection_name)
+        report = generate_adaptive_report(result)
         st.markdown(report)
 
-def generate_adaptive_report(result, collection_name):
+def generate_adaptive_report(result):
     """Generate an adaptive analysis report"""
     metadata = result.get('metadata', {})
     persona_analysis = metadata.get('persona_analysis', {})
