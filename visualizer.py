@@ -72,7 +72,7 @@ class PDFVisualizer:
             return None
         
         # Truncate long titles
-        short_titles = [title[:20] + '...' if len(title) > 20 else title for title in section_titles]
+        short_titles = [title[:20] + '...' if len(title]) > 20 else title for title in section_titles]
         
         fig = go.Figure(data=go.Heatmap(
             z=similarity_matrix,
@@ -101,7 +101,7 @@ class PDFVisualizer:
             'section': [s['title'][:30] + '...' if len(s['title']) > 30 else s['title'] for s in sections],
             'word_count': [s['word_count'] for s in sections],
             'page': [s['page'] for s in sections],
-            'cluster': clusters
+            'cluster': [str(c) for c in clusters]
         })
         
         fig = px.scatter(
@@ -112,7 +112,7 @@ class PDFVisualizer:
             hover_name='section',
             title="Content Clusters by Page and Word Count",
             labels={'page': 'Page Number', 'word_count': 'Word Count'},
-            color_continuous_scale='Set3'
+            color_discrete_sequence=px.colors.qualitative.Set3
         )
         
         fig.update_traces(marker=dict(size=12, line=dict(width=2, color='white')))
