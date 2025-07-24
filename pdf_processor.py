@@ -21,6 +21,11 @@ try:
 except LookupError:
     nltk.download('punkt')
 
+try:
+    nltk.data.find('tokenizers/punkt_tab')
+except LookupError:
+    nltk.download('punkt_tab')
+
 class PDFProcessor:
     def __init__(self):
         """Initialize the PDF processor with NLP models"""

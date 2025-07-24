@@ -72,7 +72,7 @@ class PDFVisualizer:
             return None
         
         # Truncate long titles
-        short_titles = [title[:20] + '...' if len(title]) > 20 else title for title in section_titles]
+        short_titles = [title[:20] + '...' if len(title) > 20 else title for title in section_titles]
         
         fig = go.Figure(data=go.Heatmap(
             z=similarity_matrix,
